@@ -24,20 +24,20 @@
 #include <nc_hashkit.h>
 
 #define KETAMA_CONTINUUM_ADDITION   10  /* # extra slots to build into continuum */
-#define KETAMA_POINTS_PER_SERVER    160 /* 40 points per hash */
+#define KETAMA_POINTS_PER_SERVER    100
 #define KETAMA_MAX_HOSTLEN          86
 
 static uint32_t
-ketama_hash(const char *key, size_t key_length, uint32_t alignment)
+ketama_hash(const char *key, size_t key_length)
 {
     unsigned char results[16];
 
     md5_signature((unsigned char*)key, key_length, results);
 
-    return ((uint32_t) (results[3 + alignment * 4] & 0xFF) << 24)
-        | ((uint32_t) (results[2 + alignment * 4] & 0xFF) << 16)
-        | ((uint32_t) (results[1 + alignment * 4] & 0xFF) << 8)
-        | (results[0 + alignment * 4] & 0xFF);
+    return ((uint32_t) (results[3] & 0xFF) << 24)
+        | ((uint32_t) (results[2] & 0xFF) << 16)
+        | ((uint32_t) (results[1] & 0xFF) << 8)
+        | (results[0] & 0xFF);
 }
 
 static int
@@ -101,8 +101,6 @@ ketama_update(struct server_pool *pool)
             nlive_server++;
         }
 
-        ASSERT(server->weight > 0);
-
         /* count weight only for live servers */
         if (!pool->auto_eject_hosts || server->next_retry <= now) {
             total_weight += server->weight;
@@ -158,9 +156,8 @@ ketama_update(struct server_pool *pool)
             continue;
         }
 
-        pct = (float)server->weight / (float)total_weight;
-        pointer_per_server = (uint32_t) ((floorf((float) (pct * KETAMA_POINTS_PER_SERVER / 4 * (float)nlive_server + 0.0000000001))) * 4);
-        pointer_per_hash = 4;
+        pointer_per_server = KETAMA_POINTS_PER_SERVER;
+        pointer_per_hash = 1;
 
         log_debug(LOG_VERB, "%.*s:%"PRIu16" weight %"PRIu32" of %"PRIu32" "
                   "pct %0.5f points per server %"PRIu32"",
@@ -179,11 +176,9 @@ ketama_update(struct server_pool *pool)
                                server->name.len, server->name.data,
                                pointer_index - 1);
 
-            for (x = 0; x < pointer_per_hash; x++) {
-                value = ketama_hash(host, hostlen, x);
-                pool->continuum[continuum_index].index = server_index;
-                pool->continuum[continuum_index++].value = value;
-            }
+            value = ketama_hash(host, hostlen);
+            pool->continuum[continuum_index].index = server_index;
+            pool->continuum[continuum_index++].value = value;
         }
         pointer_counter += pointer_per_server;
     }
